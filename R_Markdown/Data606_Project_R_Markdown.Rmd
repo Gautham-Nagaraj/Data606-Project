@@ -17,7 +17,7 @@ The dataset was synthetically generated using real-world education and career tr
 
 
 ```{r}
-education_data = read.csv('https://raw.githubusercontent.com/Gautham-Nagaraj/Data606-Project/refs/heads/main/education_career_success.csv')
+education_data = read.csv('https://raw.githubusercontent.com/Gautham-Nagaraj/Data606-Project/refs/heads/main/Dataset/education_career_success.csv')
 head(education_data,10)
 ```
 
