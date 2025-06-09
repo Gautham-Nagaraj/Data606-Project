@@ -1,0 +1,640 @@
+---
+title: "Data606-Project: Education & Career Success"
+author: 'Gautham Nagaraj UID: 30273439, Angela Li (30024371), Prichelle Lal (30261130)'
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+
+*Introduction:* In today's competitive job market, understanding the pathways from education to career success is more crucial than ever. Students invest significant time and resources into their academic journey with the hope that strong educational performance will lead to favorable career outcomes.
+
+However, the relationship between education and career achievement is influenced by a multitude of factors, including soft skills, internships, networking, and field of study. This dataset captures the educational backgrounds, skillsets, and career results of 5,000 individuals, providing a rich foundation to explore these connections. By analyzing variables such as GPA, SAT scores, university rankings, certifications, and job offers, we aim to build predictive models and uncover the key drivers of starting salaries, promotions, and overall career satisfaction. 
+
+Our goal is to apply sampling, regression estimation, and categorical data analysis to uncover patterns and relationships within the education and career success dataset. Using methods such as stratified sampling, ratio estimation, logistic regression, and classification, we aim to identify key predictors of career outcomes such as job offers, starting salary, and satisfaction. These analyses will allow us to make informed inferences, build predictive models, and ultimately gain a deeper understanding of how educational and experiential factors influence career trajectories.
+
+
+The dataset was synthetically generated using real-world education and career trends.
+
+
+```{r}
+education_data = read.csv('https://raw.githubusercontent.com/Gautham-Nagaraj/Data606-Project/refs/heads/main/Dataset/education_career_success.csv')
+head(education_data,10)
+```
+
+Based on the above table, we need to ensure that categorical variables are handled appropriately when fitting the model.
+Some of the variables that appear to be continuous but are categorical are:
+
+**University Ranking:**  The difference between rank 1 and 2 might not be the same as between rank 999 and 1000 in terms of quality or impact. Thus, it is better to treat this variable as categorical rather than continuous.
+
+As the number of levels will be very high if we factor this variable, it is better to label it as 'very high ranked', 'high ranked', 'low rank'.
+
+
+**Number of Internships Completed(0-4):** While counts can sometimes be treated as continuous if the range is large, here, each number represents a distinct level of internship experience, making it more appropriate as an ordinal categorical variable.
+
+**Projects_Completed(0-9):** Similar to number of internships, it is more appropriate to treat this as categorical variable.
+
+
+**Certifications**, **Soft-Skill Score**, **Networking Score** - These variables are also to be treated as categorical due to lower counts.
+
+Now to label the university ranking:
+
+```{r}
+library(dplyr)
+education_data <- education_data %>%
+  mutate(
+    University_Ranking_Category = case_when(
+      University_Ranking >= 1 & University_Ranking <= 250 ~ "High ranked",
+      University_Ranking > 250 & University_Ranking <= 500 ~ "Moderately Ranked",
+      University_Ranking > 500 & University_Ranking <= 750 ~ "Low ranked",
+      University_Ranking > 750 ~ "Very low ranked"
+    )
+  )
+head(education_data,10)
+```
+
+The rest of the variables can be converted to categorical data as shown below:
+
+```{r}
+education_data$Internships_Completed <- factor(education_data$Internships_Completed)
+education_data$Projects_Completed <- factor(education_data$Projects_Completed)
+education_data$Certifications <- factor(education_data$Certifications)
+education_data$Soft_Skills_Score <- factor(education_data$Soft_Skills_Score)
+education_data$Networking_Score <- factor(education_data$Networking_Score)
+education_data$Gender <- factor(education_data$Gender)
+```
+
+We can remove the University_Ranking column so that it is not used.
+
+```{r}
+education_data = education_data[,-6]
+```
+
+Distribution of starting salary:
+
+```{r}
+library(ggplot2)
+ggplot(education_data, aes(x = Starting_Salary)) +
+  geom_histogram(binwidth = 5000, fill = "darkgreen", color = "black", alpha = 0.7)
+  labs(
+    title = "Distribution of Starting Salary",
+    x = "Starting Salary ($)",
+    y = "Count / Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+Distribution of gender across job levels:
+
+```{r}
+library(ggplot2)
+ggplot(education_data, aes(x = Current_Job_Level, fill = Gender)) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Gender Distribution by Current Job Level",
+    x = "Current Job Level",
+    y = "Proportion"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+We can visualize how the number of internships impact the job offers received:
+
+```{r}
+education_data %>%
+  count(Internships_Completed, Job_Offers) %>% 
+  ggplot(aes(x = as.factor(Internships_Completed), y = as.factor(Job_Offers), fill = n)) +
+  geom_tile(color = "white") + 
+  geom_text(aes(label = n), color = "black") + 
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(
+    title = "Count of Internships vs. Job Offers",
+    x = "Internships Completed",
+    y = "Job Offers Received",
+    fill = "Count"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+Now to display the number of students from each field of study, this could be necessary as a stratified or cluster sampling can be taken based on the filed of study.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+field_of_study_counts <- education_data %>%
+  group_by(Field_of_Study) %>%
+  count(name = "Number_of_Students") %>%
+  arrange(desc(Number_of_Students))
+
+
+education_data$Field_of_Study <- factor(education_data$Field_of_Study,
+                                      levels = field_of_study_counts$Field_of_Study)
+
+ggplot(data = education_data, aes(x = Field_of_Study)) +
+  geom_bar(fill = "darkblue", color = "black") +
+  labs(
+    title = "Number of Students per Field of Study",
+    x = "Field of Study",
+    y = "Number of Students"
+  ) +
+  theme_light() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5)
+```
+
+As the number of students across each field of study is approximately equal, it can be considered as an ideal candidate for cluster sampling. Sampling to be done after a model is fit.
+
+We can now proceed to fit the multiple linear regression model on the dataset and use it to predict the starting salary of a student.
+
+As there are multiple assumptions that are to be cleared for the model, we can choose to switch to classification by changing the starting salary to a categorical variable through labeling.
+
+Using the ordinary least-squares method to fit the model:
+
+```{r}
+colnames(education_data)
+```
+
+
+```{r}
+salary_pred_full_model = lm(Starting_Salary ~ Age+Gender+High_School_GPA+SAT_Score+University_GPA+Field_of_Study+Internships_Completed+Projects_Completed+Certifications+Soft_Skills_Score+Networking_Score+University_Ranking_Category ,data = education_data)
+
+summary(salary_pred_full_model)
+```
+A negative adjusted R-squared means the model's predictions are worse than simply using the mean of the dependent variable as a prediction. It suggests that the model doesn't effectively explain the variation in the outcome variable and that the predictors are not helpful, potentially indicating a poor model.
+
+This could be a result of multicollinearity between the predictors making them not not significant.
+We can check for multicollinearity between two continuous variables:
+
+```{r}
+pairs(~University_GPA +Age+High_School_GPA+ SAT_Score , data = education_data)
+```
+
+There is no pattern that appears between the predictors, we can use the VIF test to confirm if there is multicollinearity.
+
+```{r}
+library(mctest) 
+imcdiag(salary_pred_full_model, method = "VIF")
+```
+As some of the factors were insignificant, we can remove them using the step_wise function of the oslrr package. This method will give us the best fit model based on a few metrics.
+
+```{r}
+library(olsrr)
+salary_pred_Subsets = ols_step_best_subset(salary_pred_full_model, details=FALSE)
+```
+
+We are only interested in $adjusted R^2$, AIC(Akaike Information Criterion) and Mallow's cp criterion for this model. We do not choose to use R2 as it does not punish the model for adding more predictors/overfitting.
+
+```{r}
+AdjustedR2=c((salary_pred_Subsets$metrics)$adjr)
+cp=c((salary_pred_Subsets$metrics)$cp)
+AIC=c((salary_pred_Subsets$metrics)$aic)
+cbind(AdjustedR2,cp,AIC)
+```
+
+The model with highest adjusted R2 uses only 3 predictors and the cp mallows criterion is slightly lower compared to the other predictors. The AIC is mostly similar across the models but slightly lower for the one with 3 predictors.
+
+```{r}
+salary_pred_Subsets$metrics$predictors[3]
+```
+The 3 predictors are soft skills, networking score and university rank
+
+```{r}
+par(mfrow=c(2,2)) # split the plotting panel into a 2 x 2 grid
+plot(cp,type = "o",pch=10, xlab="Number of Variables",ylab= "Cp")
+plot(AIC,type = "o",pch=10, xlab="Number of Variables",ylab= "AIC")
+plot(AdjustedR2,type = "o",pch=10, xlab="Number of Variables",ylab= "Adjusted R^2")
+```
+
+The ideal cp_mallows criterion is k+2, where k is the number of predictors. For 3 predictors the ideal cp_mallows should be 5, but it is 11 in this case. Indicating a bias.
+
+
+```{r}
+salary_pred_best_model = lm(Starting_Salary ~ Soft_Skills_Score+Networking_Score+University_Ranking_Category ,data = education_data)
+
+summary(salary_pred_best_model)
+```
+
+Based on the adjusted R2 obtained for the best fit model, which is 0.14%,and the cp-mallows criterion it does not make sense to proceed with the multiple linear regression model. So the rest of the assumptions required for mlrm will not be performed.
+
+We can use a regression tree as it requires less assumptions and can be pruned to make it more interpret-able.
+
+Taking a sample of 75% of the data:
+```{r}
+library(tree)
+idx=sample(1:nrow(education_data),0.75*nrow(education_data))
+train=education_data[idx,]
+test=education_data[-idx,]
+reg.tree.salary<-tree(Starting_Salary ~ Age+Gender+High_School_GPA+SAT_Score+University_GPA+Field_of_Study+Internships_Completed+Projects_Completed+Certifications+Soft_Skills_Score+Networking_Score+University_Ranking_Category, train)
+summary(reg.tree.salary)
+```
+
+It is not possible to construct a regression tree with a single node, the residual deviance is extremely high, this also indicates that regression cannot be used to predict the starting salary of students.
+
+
+We can choose to perform classification by converting the salary data into a categorical variable.
+
+
+```{r}
+education_data <- education_data %>%
+  mutate(
+    Starting_Salary_Category = case_when(
+      Starting_Salary >= 25000 & Starting_Salary <= 40000 ~ "Low.Salary",
+      Starting_Salary > 40000 & Starting_Salary <= 75000 ~ "Median.Salary",
+      Starting_Salary > 75000 & Starting_Salary <= 120000 ~ "High.Salary"
+    )
+  )
+```
+
+Remove the continuous variable:
+
+
+As the dependent variable consists of more than 2 classes it is better to use Linear Discriminant Analysis or Quadratic Discriminant Analysis to predict the outcome.
+
+Both the LDA and QDA require the assumption of normality:
+
+
+```{r}
+numerical_cols <- c(
+  "Age", "High_School_GPA", "SAT_Score", "University_GPA")
+
+shapiro_results <- list()
+
+cat("--- Shapiro-Wilk Normality Test Results ---\n")
+
+for (col_name in numerical_cols) {
+  
+  data_vector <- education_data[[col_name]]
+
+  data_vector <- na.omit(data_vector)
+
+  test_result <- shapiro.test(data_vector)
+
+  shapiro_results[[col_name]] <- test_result
+
+  cat(sprintf("\nColumn: '%s'\n", col_name))
+  cat(sprintf("  Shapiro-Wilk W statistic: %.4f\n", test_result$statistic))
+  cat(sprintf("  p-value: %.4f\n", test_result$p.value))
+
+    # Interpret the p-value
+  if (test_result$p.value < 0.05) {
+    cat("  Conclusion: The data in this column is likely NOT normally distributed (p < 0.05).\n")
+  } else {
+    cat("  Conclusion: The data in this column appears to be normally distributed (p >= 0.05).\n")
+  }
+}
+
+```
+The W statistics which is close to 1 indicates that the variable follows a normal distribution but the p-value states to reject null-hypothesis, which is the data is normally distributed.
+
+The shapiro test is very sensitive and can conclude data is not normal for small deviances.
+We can use Quantile-Quantile plots to test the results of the test:
+
+```{r}
+qq_plots_list <- list()
+
+for (col_name in numerical_cols ) {
+  data_vector <- education_data[[col_name]]
+
+
+  p <- ggplot(data.frame(x = data_vector), aes(sample = x)) +
+    stat_qq() + # Adds the QQ-plot points
+    stat_qq_line(color = "red", linetype = "dashed") + 
+    labs(
+      title = paste0("Q-Q Plot for ", col_name),
+      x = "Theoretical Quantiles (Normal Distribution)",
+      y = "Sample Quantiles"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+
+  # Store the plot in the list
+  qq_plots_list[[col_name]] <- p
+}
+
+cat("\n--- Displaying Q-Q Plots ---\n")
+for (plot_name in names(qq_plots_list)) {
+  print(qq_plots_list[[plot_name]])
+}
+
+```
+
+The QQ plots indicate that there are heavier tails and the data is not normally distributed. This could due to outliers, we can check for outliers and remove them. Once the outliers are removed we can check for normality, if this fails we can proceed with box-cox or log-transformations on the data.
+
+```{r}
+education_data_cleaned_iqr <- education_data
+
+cat("--- Outlier Detection and Removal using IQR Rule ---\n")
+
+for (col_name in numerical_cols) {
+  cat(sprintf("\nProcessing column: '%s'\n", col_name))
+
+  data_vector <- education_data[[col_name]]
+  data_vector_no_na <- na.omit(data_vector)
+
+  
+  Q1 <- quantile(data_vector_no_na, 0.25)
+  Q3 <- quantile(data_vector_no_na, 0.75)
+  IQR_val <- Q3 - Q1
+
+  
+  lower_bound <- Q1 - 1.5 * IQR_val
+  upper_bound <- Q3 + 1.5 * IQR_val
+
+  outlier_indices <- which(data_vector < lower_bound | data_vector > upper_bound)
+
+  # Report detected outliers
+  if (length(outlier_indices) > 0) {
+    cat(sprintf("  Detected %d outliers in '%s'.\n", length(outlier_indices), col_name))
+    cat(sprintf("  Outlier values: %s\n", paste(data_vector[outlier_indices], collapse = ", ")))
+    cat(sprintf("  Lower bound: %.2f, Upper bound: %.2f\n", lower_bound, upper_bound))
+
+    } else {
+    cat(sprintf("  No outliers detected in '%s' using IQR rule.\n", col_name))
+  }
+}
+```
+
+
+As there are no outliers detected, we can use the box-cox transformation on the continuous variables to obtain normality.
+
+```{r}
+library(caret)
+education_data_transformed <- education_data
+for (col_name in numerical_cols) {
+  data_vector <- education_data_transformed[[col_name]]
+  bc_object <- BoxCoxTrans(data_vector)
+  lambda_val <- bc_object$lambda
+  cat(sprintf("  Optimal lambda for '%s': %.4f\n", col_name, lambda_val))
+  
+  transformed_data <- predict(bc_object, data_vector)
+  education_data_transformed[[paste0(col_name, "_BC")]] <- transformed_data
+}
+```
+
+
+```{r}
+qq_plots_list <- list()
+
+for (col_name in numerical_cols ) {
+  data_vector <- education_data_transformed[[col_name]]
+
+
+  p <- ggplot(data.frame(x = data_vector), aes(sample = x)) +
+    stat_qq() + # Adds the QQ-plot points
+    stat_qq_line(color = "red", linetype = "dashed") + 
+    labs(
+      title = paste0("Q-Q Plot for ", col_name),
+      x = "Theoretical Quantiles (Normal Distribution)",
+      y = "Sample Quantiles"
+    ) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5))
+
+  # Store the plot in the list
+  qq_plots_list[[col_name]] <- p
+}
+
+cat("\n--- Displaying Q-Q Plots for transformed data---\n")
+for (plot_name in names(qq_plots_list)) {
+  print(qq_plots_list[[plot_name]])
+}
+```
+
+Based on the plots it appears the tails are still heavy on the end, indicating kurtosis. However, if we consider the test statistic from the shapiro-Wilk tests, they were closer to 1 indicating the data is approximately normally distributed. While LDA assumes multivariate normality within each class, in practice, it's often reasonably robust to mild deviations, especially with large sample sizes.
+
+We can consider the data to be approximately normally distributed for this case. Another assumption that needs to be satisfied for LDA is equal variance between the classes/predictors.
+
+We can use Levene's test for equal variance across the predictors.
+
+The null hypothesis indicates the variances are equal across all groups
+The alternate hypothesis indicates at least one group variance is different from the others
+
+```{r}
+library(car)
+levene_test_age <- leveneTest(Age ~ factor(Starting_Salary_Category), data = education_data)
+levene_test_age
+```
+```{r}
+levene_test_SchoolGPA <- leveneTest(High_School_GPA ~ factor(Starting_Salary_Category), data = education_data)
+levene_test_SchoolGPA
+```
+```{r}
+levene_test_SAT <- leveneTest(SAT_Score ~ factor(Starting_Salary_Category), data = education_data)
+levene_test_SAT
+```
+```{r}
+levene_test_UniGPA <- leveneTest(University_GPA ~ factor(Starting_Salary_Category), data = education_data)
+levene_test_UniGPA
+```
+The predictor High_School_GPA fails the test of equal variances, we choose to remove the predictor or proceed with QDA which does not require the assumption of equal variance:
+
+We can proceed with QDA as the high school GPA can be a significant predictor which would get excluded while performing LDA.
+
+QDA can be performed using a 10 fold cross validation with the help of the caret library. We do not need to use the transformed data as it was unable to transform the data, using this would simply add to complexity in interpreting the model.
+
+```{r}
+library(caret)
+set.seed(42)
+indexs = sample(1:nrow(education_data),0.75*nrow(education_data))
+train_data = education_data[indexs,]
+test_data = education_data[-indexs,]
+
+qda_model_caret <- train(
+  factor(Starting_Salary_Category) ~ Age + High_School_GPA + SAT_Score + University_GPA , 
+  data = train_data,
+  method = "qda", 
+  trControl = trainControl(method = 'cv', number = 10, verboseIter = FALSE, classProbs = TRUE, summaryFunction = defaultSummary),
+  metric = "Accuracy"
+)
+qda_model_caret
+```
+The above output indicates that groups are too small for the folds. We can use fewer folds with the same training split data created before.
+
+```{r}
+qda_model_caret_5fold <- train(
+  factor(Starting_Salary_Category) ~ Age + High_School_GPA + SAT_Score + University_GPA , 
+  data = train_data,
+  method = "qda", 
+  trControl = trainControl(method = 'cv', number = 5, verboseIter = FALSE, classProbs = TRUE, summaryFunction = defaultSummary),
+  metric = "Accuracy"
+)
+qda_model_caret_5fold
+```
+The accuracy is similar for the 10-fold and 5-fold cross validation. We can use the 10-fold cross- validated model.
+
+```{r}
+qda.class<-predict(qda_model_caret, test_data)
+table(qda.class, test_data$Starting_Salary_Category)
+```
+Although the accuracy is 70%, the qda predicted all the salaries to be median salary. We can look at a different approach, which uses a better visualization like classification tress.
+
+```{r}
+train_data$Starting_Salary_Category  = factor(train_data$Starting_Salary_Category)
+```
+
+
+```{r}
+library(klaR)
+partimat(Starting_Salary_Category ~ Age + High_School_GPA + SAT_Score + University_GPA,
+         data = train_data,
+         method = "qda")
+```
+The above plots above are not very clear due to the large amounts of data. We may need to rely on the accuracy score to accurately determine how to classify the outcome variable.
+
+There is a better way to visualize the outcomes, that is using decision trees. Although less accurate it is easier to understand the visual.
+
+```{r}
+classification.salary.tree = tree(Starting_Salary_Category ~Age + Gender + High_School_GPA + SAT_Score + University_GPA + Field_of_Study + Internships_Completed + Projects_Completed + Certifications + Soft_Skills_Score + Networking_Score, data=train_data)
+summary(classification.salary.tree)
+```
+The above tree only grew a single node which is not helpful for predictions. We can change few parameters to force the tree to grow more nodes:
+
+```{r}
+classification.salary.tree_adjusted <- tree(
+  Starting_Salary_Category ~ Age + Gender + High_School_GPA + SAT_Score + University_GPA +
+    Field_of_Study + Internships_Completed + Projects_Completed + Certifications +
+    Soft_Skills_Score + Networking_Score,
+  data = train_data,
+  control = tree.control(
+    nobs = nrow(train_data),
+    mindev = 0.001,
+    mincut = 2     
+  )
+)
+summary(classification.salary.tree_adjusted)
+plot(classification.salary.tree_adjusted)
+text(classification.salary.tree_adjusted, pretty = 0)
+```
+Now we can prune the tree to obtain a smaller tree which can be understood visually:
+
+```{r}
+#cv.salary <- cv.tree(classification.salary.tree_adjusted, FUN = prune.misclass, K = 10,
+#  control = tree.control(
+#  nobs = nrow(train_data),
+#  mindev = 0.001,
+#  mincut = 2  
+#plot(cv.salary$size,cv.salary$dev,type='b')
+```
+
+It is not possible to prune the tree using cv.tree function as it internally builds a tree with a single node. Using the same parameters explicitly results in errors indicating that there are internal issues on how cv.tree constructs a tree with parameters.
+
+We can simply choose the number of residual nodes based on best visualization
+```{r}
+prune.class=prune.tree(classification.salary.tree_adjusted,best=6)
+plot(prune.class)
+text(prune.class,pretty=0)
+```
+```{r}
+summary(prune.class)
+```
+Although less accurate the complete tree, this is tree is easier to visualize and does not overfit the test dataset. It has the same accuracy as the QDA model.
+
+```{r}
+prune.pred=predict(prune.class,test_data,type="class")
+table(prune.pred,test_data$Starting_Salary_Category)
+```
+
+This indicates that the model did not predict high salary successfully. There were 2 instances where lower salary -> 2 and Median salary -> 55 should have been classified as high salary.
+
+There were 301 Low salary counts which were predicted as median salary and 25 median salary counts which were predicted as low salary.
+
+Now, for the final part of the project. We need to determine what is the best way to obtain samples from the dataset, a Simple random sample, stratified sample and cluster sample can be taken and the population metrics can be compared to see which is more accurate and has a lower standard deviation.
+
+
+Simple random sample without replacement:
+
+```{r}
+set.seed(2024)
+N = dim(education_data)[1]
+n = 300
+idx=sample(1:N,size = n, replace = FALSE)
+population_mean = mean(education_data$Starting_Salary)
+population_SD = sd(education_data$Starting_Salary)
+cat("The population mean is: ", population_mean, "and the standard deviation is: ", population_SD)
+```
+The Standard error can be calculated as $SE_{x} = SD/sqrt(n) * sqrt((N-n)/(N-1))$
+
+```{r}
+Standard_error_est = population_SD/sqrt(n) * sqrt((N-n)/(N-1))
+Standard_error_est
+```
+So, the best sampling method would provide a value close to a mean of 50563.54 and SE of 811.4536
+
+```{r}
+library(survey)
+new_data <- data.frame(education_data[idx,],pw=rep(N/n,n),fpc=rep(N,n))
+SRS_svy <- svydesign(id=~0, strata = NULL, weights=~pw, data = new_data, fpc=~fpc)
+mean_salary <- svymean(~Starting_Salary, SRS_svy)
+mean_salary
+```
+The mean and SE are indeed close to the population statistics, we can check other sampling methods are see if they have the same values.
+
+
+Stratified sampling:
+
+```{r}
+library(sampling)
+desired_sizes_vector <- c("Arts" = 70,"Mathematics" = 70, "Law" = 70, "Business" = 70,"Engineering" = 70, "Medicine" = 70,
+  "Computer Science" = 70)
+Strata_idx = sampling::strata(education_data, stratanames=c("Field_of_Study"), size=as.numeric(desired_sizes_vector), method="srswor")
+Salary_strat<-getdata(education_data,Strata_idx)
+summary(Salary_strat$Field_of_Study)
+```
+```{r}
+library(survey)
+Salary_strat2=data.frame(Salary_strat, pw=1/Salary_strat$Prob, fpc=c(rep(749,70),rep(745,70),rep(727,70),rep(719, 70),rep(701,70),rep(689,70),rep(670,70)))
+Strata_svy<-svydesign(id=~1,strata = ~Field_of_Study, weights = ~pw, data = Salary_strat2, fpc=~fpc)
+Strata_mean_salary<-svymean(~Starting_Salary, Strata_svy)
+Strata_mean_salary
+```
+The Simple random sample performed better than the stratified sample in this case. A proportional sampling could improve the results slightly but since the filed of study almost has equal number of counts it would only improve the results slightly.
+
+
+Cluster Sampling:
+
+```{r}
+all_clusters <- levels(education_data$Field_of_Study)
+num_total_clusters <- length(all_clusters)
+num_sampled_clusters <- 3
+sampled_cluster_names <- sample(all_clusters, size = num_sampled_clusters, replace = FALSE)
+cluster_sample_data <- education_data %>%
+  filter(Field_of_Study %in% sampled_cluster_names)
+
+cluster_sample_data$cluster_id <- as.integer(cluster_sample_data$Field_of_Study) 
+
+cluster_sample_data$total_clusters_pop <- num_total_clusters
+
+cluster_svy_design <- svydesign(
+  id = ~cluster_id,
+  fpc = ~total_clusters_pop, # FPC for the clusters themselves
+  data = cluster_sample_data
+)
+
+mean_salary_cluster <- svymean(~Starting_Salary, cluster_svy_design)
+cat("\nMean Starting_Salary from Cluster Sample (Survey Package):\n")
+print(mean_salary_cluster)
+
+
+```
+The cluster sampling gives us the best result for estimating the population mean. Indicating that the 'field of study' is a suitable column for clustering.
+
+```{r}
+library(lme4)
+icc_model <- lmer(Starting_Salary ~ (1 | Field_of_Study), data = education_data)
+variance_components <- as.data.frame(VarCorr(icc_model))
+var_between_clusters <- variance_components$vcov[variance_components$grp == "Field_of_Study"]
+var_within_clusters <- variance_components$vcov[variance_components$grp == "Residual"]
+icc_score <- var_between_clusters / (var_between_clusters + var_within_clusters)
+icc_score
+```
+The ICC score is 0 indicating that there is no correlation between the clusters which is a necessary condition to perform cluster sampling. An ICC score of 1 would indicate correlation between clusters indicating that it is not suitable for clustering.
+
+
+*Summary* To summarize, the regression models were not suitable to predict the starting salary of students. Different methods including multiple linear regression, regression tress all indicated that the dataset is not suitable for regression.
+
+The starting salary was converted to categorical variable through labeling. Different methods of classifications were used including QDA and classification trees. They both had the same mis-classification rate of 70%, but QDA only predicted all the salaries as Median salary, which is not desirable. The classification tree, with the same accuracy, was able to predict a few instances of lower salary but none for higher salary. This is can be considered a slightly better method as it allows us to visualize the results in a better manner.
+
+The sampling was done using 3 methods: Simple Random Sampling Without Replacement, Stratified Sampling, and One-Stage Cluster Sampling. The Cluster sampling had the best results and the estimate was very close to the population parameters. This is to generalize that it is better to take a cluster sampling for student data, especially when collected across different fields of study.
