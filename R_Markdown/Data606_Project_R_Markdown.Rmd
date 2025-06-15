@@ -429,7 +429,7 @@ levene_test_SAT
 levene_test_UniGPA <- leveneTest(University_GPA ~ factor(Starting_Salary_Category), data = education_data)
 levene_test_UniGPA
 ```
-The predictor High_School_GPA fails the test of equal variances, we choose to remove the predictor or proceed with QDA which does not require the assumption of equal variance:
+The predictors High_School_GPA and University_GPA have a slightly lower p-value compared to the other predictors, we can choose to remove the predictor or proceed with QDA which does not require the assumption of equal variance:
 
 We can proceed with QDA as the high school GPA can be a significant predictor which would get excluded while performing LDA.
 
@@ -590,7 +590,7 @@ Strata_svy<-svydesign(id=~1,strata = ~Field_of_Study, weights = ~pw, data = Sala
 Strata_mean_salary<-svymean(~Starting_Salary, Strata_svy)
 Strata_mean_salary
 ```
-The Simple random sample performed better than the stratified sample in this case. A proportional sampling could improve the results slightly but since the filed of study almost has equal number of counts it would only improve the results slightly.
+The stratified sample performed better than the simple random sample in this case. A proportional sampling could improve the results slightly but since the filed of study almost has equal number of counts it would only improve the results slightly.
 
 
 Cluster Sampling:
@@ -609,7 +609,7 @@ cluster_sample_data$total_clusters_pop <- num_total_clusters
 
 cluster_svy_design <- svydesign(
   id = ~cluster_id,
-  fpc = ~total_clusters_pop, # FPC for the clusters themselves
+  fpc = ~total_clusters_pop,
   data = cluster_sample_data
 )
 
@@ -631,10 +631,211 @@ icc_score <- var_between_clusters / (var_between_clusters + var_within_clusters)
 icc_score
 ```
 The ICC score is 0 indicating that there is no correlation between the clusters which is a necessary condition to perform cluster sampling. An ICC score of 1 would indicate correlation between clusters indicating that it is not suitable for clustering.
+          
+                                                          -------------
+
+Based on feedback from the TAs, we can choose to use a stratified sampling and refit the model for QDA and classification trees to see if there is a better prediction to be obtained. Since the models and trees were unable to provide any predictions for the High Salary class a Simple random sample is not the best way to divide the test and train set.
+
+Taking a stratified sample with proportional allocation on the Starting_Salary_Category.
 
 
-*Summary* To summarize, the regression models were not suitable to predict the starting salary of students. Different methods including multiple linear regression, regression tress all indicated that the dataset is not suitable for regression.
+```{r}
+pop_strata_counts <- table(education_data$Starting_Salary_Category)
+pop_strata_counts <- pop_strata_counts[levels(education_data$Starting_Salary_Category)]
+print(pop_strata_counts)
+```
+
+
+```{r}
+total_sample_size <- 600
+N_total_pop <- sum(pop_strata_counts)
+calculated_sample_sizes_raw <- round(total_sample_size * (pop_strata_counts / N_total_pop))
+sample_sizes_per_stratum <- pmin(calculated_sample_sizes_raw, pop_strata_counts)
+print(sample_sizes_per_stratum)
+```
+
+
+```{r}
+ education_data$Starting_Salary_Category<- factor(
+    education_data$Starting_Salary_Category,
+    levels = c("Low.Salary", "Median.Salary", "High.Salary"))
+print(unique((education_data$Starting_Salary_Category)))
+```
+
+
+
+
+```{r}
+#set.seed(2024)
+#library(sampling)
+#stratified_sample_indices <- sampling::strata(data = education_data,stratanames = c("Starting_Salary_Category"),
+#  size = as.numeric(sample_sizes_per_stratum),method = "srswor", )
+#proportional_stratified_sample <- getdata(education_data, stratified_sample_indices)
+#print(prop.table(table(proportional_stratified_sample$Starting_Salary_Category)))
+#The sampling library was causing issues during knitting, hence sampling was performed using the dplyr library.
+```
+
+```{r}
+set.seed(2024)
+library(dplyr)
+proportional_stratified_sample_list <- list()
+for (level_name in levels(education_data$Starting_Salary_Category)) {
+  target_size <- sample_sizes_per_stratum[level_name]
+  if (is.na(target_size) || target_size < 0) {       target_size <- 0
+  }
+
+  if (target_size > 0) {
+    stratum_data <- education_data %>% filter(Starting_Salary_Category == level_name)
+    if (nrow(stratum_data) < target_size) {
+        warning(paste("Not enough actual data for", level_name, ". Sampling all available:", nrow(stratum_data)))
+        proportional_stratified_sample_list[[level_name]] <- sample_n(stratum_data, size = nrow(stratum_data), replace = FALSE)
+    } else {
+        proportional_stratified_sample_list[[level_name]] <- sample_n(stratum_data, size = target_size, replace = FALSE)
+    }
+  } else {
+    proportional_stratified_sample_list[[level_name]] <- data.frame() 
+  }
+}
+proportional_stratified_sample <- bind_rows(proportional_stratified_sample_list)
+print(prop.table(table(proportional_stratified_sample$Starting_Salary_Category)))
+
+#The results are identical to the stratified sampling from the sampling library
+```
+
+
+
+Splitting the data into test and train based on stratified sampling with proportional allocation.
+
+```{r}
+set.seed(2025)
+library(dplyr)
+
+train_data_list <- list()
+test_data_list <- list()
+
+for (level_name in levels(proportional_stratified_sample$Starting_Salary_Category)) {
+  stratum_data <- proportional_stratified_sample %>%
+    filter(Starting_Salary_Category == level_name)
+
+  train_size_stratum <- floor(0.70 * nrow(stratum_data))
+  if (train_size_stratum == 0 && nrow(stratum_data) > 0) {
+      train_size_stratum <- 1 
+  }
+  if (nrow(stratum_data) - train_size_stratum == 0 && nrow(stratum_data) > 1 && train_size_stratum > 0) {
+      train_size_stratum <- train_size_stratum - 1 
+  }
+
+
+  if (nrow(stratum_data) > 0) {
+  
+    train_indices_stratum <- sample(1:nrow(stratum_data), size = train_size_stratum, replace = FALSE)
+
+    train_data_list[[level_name]] <- stratum_data[train_indices_stratum, ]
+    test_data_list[[level_name]] <- stratum_data[-train_indices_stratum, ]
+  } else {
+    train_data_list[[level_name]] <- data.frame()
+    test_data_list[[level_name]] <- data.frame()
+  }
+}
+
+train_data_split <- bind_rows(train_data_list)
+test_data_split <- bind_rows(test_data_list)
+
+#The sampling package was causing issues while knitting again.
+```
+
+
+Now we can refit the QDA model to see if classify the data better:
+
+```{r}
+library(caret)
+
+qda_model_caret_imp <- train(Starting_Salary_Category~Age + High_School_GPA + SAT_Score + University_GPA , 
+  data = train_data_split,
+  method = "qda", 
+  trControl = trainControl(method = 'cv', number = 10, verboseIter = FALSE, classProbs = TRUE, summaryFunction = defaultSummary),
+  metric = "Accuracy"
+)
+qda_model_caret_imp
+```
+```{r}
+qda.class_imp<-predict(qda_model_caret_imp, test_data_split)
+table(qda.class_imp, test_data_split$Starting_Salary_Category)
+```
+The results obtained are still the same after using a stratified sample with proportional allocation. It could be due to the High.salary class simply having too few observations.
+
+Trying a classification tree:
+
+```{r}
+library(tree)
+classification.salary.tree.imp = tree(Starting_Salary_Category ~Age + Gender + High_School_GPA + SAT_Score + University_GPA + Field_of_Study + Internships_Completed + Projects_Completed + Certifications + Soft_Skills_Score + Networking_Score, data=train_data_split)
+summary(classification.salary.tree.imp)
+```
+
+```{r}
+plot(classification.salary.tree.imp)
+text(classification.salary.tree.imp, pretty = 0)
+```
+
+
+```{r}
+set.seed(2025)
+cv.salary <- cv.tree(classification.salary.tree.imp, FUN = prune.misclass, K = 10)
+plot(cv.salary$size,cv.salary$dev,type='b')
+```
+The graph looks a little counter-intuitive as the deviation is increasing along with tree size when it should be reducing.We can choose 8 as it has the smaller deviance and makes the tree more readable.
+
+```{r}
+prune.class.tree=prune.tree(classification.salary.tree.imp,best=8)
+plot(prune.class.tree)
+text(prune.class.tree,pretty=0)
+```
+
+```{r}
+summary(prune.class.tree)
+```
+
+```{r}
+tree.pred.salaries<-predict(prune.class.tree,test_data_split,type = "class")
+table(tree.pred.salaries,test_data_split$Starting_Salary_Category)
+```
+
+
+This tree performs a lot better than the previous one as there are a few more classifications for low salary. This is the best results we can obtain from stratified proportional sampling as for lower sample sizes the median salary takes up most of the observations. There are simply not enough observation for high salary for the tree to predict that class.
+
+We can also try a multinomial regression to see if this regression model performs better than the ones implemented before.
+
+```{r}
+library(VGAM)
+fit.blogit=vglm(Starting_Salary_Category~Age + Gender + High_School_GPA + SAT_Score + University_GPA + Field_of_Study + Internships_Completed + Projects_Completed + Certifications + Soft_Skills_Score + Networking_Score,family=multinomial,data=train_data_split)
+summary(fit.blogit)
+```
+We can try to refit the model with only 3 predictors as defined from the Stepwise model, as most of these predictors are insignificant.
+The Hauck-Donner effect  results in an upward biased p-value and loss of power, the aberration can lead to very damaging consequences such as in variable selection, so we remove newtorking score from the model.
+
+```{r}
+fit.blogit.reduced=vglm(Starting_Salary_Category~SAT_Score + Soft_Skills_Score ,family=multinomial,data=train_data_split)
+summary(fit.blogit.reduced)
+```
+
+```{r}
+deviance(fit.blogit.reduced)
+```
+```{r}
+df.residual(fit.blogit)
+```
+```{r}
+1-pchisq(deviance(fit.blogit.reduced),df.residual(fit.blogit.reduced)) 
+```
+The model seems to have a p-value of 1 indicating we cannot reject the model. However due to multiple levels of categorical variables it is very difficult to interpret and that p-value indicates that none of the predictors are significant. The best model so far is the classification tree with a misclassification rate of 28%.
+
+                                                        ------------------
+
+*Summary* To summarize, the regression models were not suitable to predict the starting salary of students. Different methods including multiple linear regression, regression tress also indicated that the dataset is not suitable for regression.
 
 The starting salary was converted to categorical variable through labeling. Different methods of classifications were used including QDA and classification trees. They both had the same mis-classification rate of 70%, but QDA only predicted all the salaries as Median salary, which is not desirable. The classification tree, with the same accuracy, was able to predict a few instances of lower salary but none for higher salary. This is can be considered a slightly better method as it allows us to visualize the results in a better manner.
 
 The sampling was done using 3 methods: Simple Random Sampling Without Replacement, Stratified Sampling, and One-Stage Cluster Sampling. The Cluster sampling had the best results and the estimate was very close to the population parameters. This is to generalize that it is better to take a cluster sampling for student data, especially when collected across different fields of study.
+                                                       ------------------
+The idea behind the project was to build a suitable regression model such that the co-coefficients such as average age, SAT score, University GPA can be substituted into the model and the estimated average salary can be obtained. This would have been an interesting find as students wanting to enroll in a university can enter their field of study, age and other factors to see what their starting salary would be so that they can choose their major respectively. The results would be close to accurate as even though the data is synthetically generated it follows real world education trends.
+                                                       ------------------
